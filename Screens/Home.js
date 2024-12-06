@@ -1,6 +1,6 @@
 import React from "react";
 import { createMaterialBottomTabNavigator } from "@react-navigation/material-bottom-tabs";
-import { Ionicons } from "react-native-vector-icons"; // Importer les icônes
+import { Ionicons } from "react-native-vector-icons";
 import ListProfile from "./Home/ListProfile";
 import Groupe from "./Home/Groupe";
 import MyProfile from "./Home/MyProfile";
@@ -9,6 +9,7 @@ const Tab = createMaterialBottomTabNavigator();
 
 export default function Home(props) {
   const currentid = props.route.params.currentid;
+
   return (
     <Tab.Navigator
       activeColor="#fff"
@@ -21,7 +22,7 @@ export default function Home(props) {
         initialParams={{ currentid: currentid }}
         options={{
           tabBarIcon: ({ color }) => (
-            <Ionicons name="person" size={27} color={color} /> // Icône de profil
+            <Ionicons name="person" size={27} color={color} />
           ),
         }}
       />
@@ -30,17 +31,16 @@ export default function Home(props) {
         component={Groupe}
         options={{
           tabBarIcon: ({ color }) => (
-            <Ionicons name="people" size={27} color={color} /> // Icône de groupe
+            <Ionicons name="people" size={27} color={color} />
           ),
         }}
       />
       <Tab.Screen
         name="MyProfile"
         component={MyProfile}
-        initialParams={{ currentid: currentid }}
         options={{
           tabBarIcon: ({ color }) => (
-            <Ionicons name="person-circle" size={27} color={color} /> // Icône de profil personnel
+            <Ionicons name="person-circle" size={27} color={color} />
           ),
         }}
       />

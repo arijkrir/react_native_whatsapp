@@ -13,16 +13,18 @@ import firebase from "../../Config/Index";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
-export default function ListProfile() {
+export default function ListProfile(props) {
   const [data, setData] = useState([]);
   const navigation = useNavigation();
   const database = firebase.database();
-  const ref_lesprofils = database.ref("lesprofils");
+  const ref_lesprofils = database.ref("lesprofiles");
+  const currentid=props.route.params.currentid;
 
   useEffect(() => {
     const listener = ref_lesprofils.on("value", (snapshot) => {
       const d = [];
       snapshot.forEach((unprofil) => {
+        if (unprofil.val().id !=currentid)
         d.push(unprofil.val());
       });
       setData(d);
@@ -39,7 +41,7 @@ export default function ListProfile() {
         renderItem={({ item }) => (
           <View style={styles.profileContainer}>
             <Image
-              source={item.photo ? { uri: item.photo } : require("../../assets/profile.png")}
+              source={item.urlImage ? { uri: item.urlImage} : require("../../assets/profile.png")}
               style={styles.profileImage}
             />
             <View style={styles.profileInfo}>
@@ -62,7 +64,7 @@ export default function ListProfile() {
             </View>
           </View>
         )}
-        keyExtractor={(item) => item.id} // Clé unique pour chaque profil
+        keyExtractor={(item) => item.id} 
         style={styles.flatListContainer}
       />
     </ImageBackground>

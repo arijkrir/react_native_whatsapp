@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import firebase from "../../Config/Index";
-import Icon from 'react-native-vector-icons/FontAwesome'; 
+import Icon from "react-native-vector-icons/FontAwesome";
 
 const database = firebase.database();
 const ref_lesMessage = database.ref("Discussions");
@@ -20,7 +20,6 @@ export default function Chat(props) {
   const currentUser = props.route.params.currentUser;
   const secondUser = props.route.params.secondUser;
 
-  
   const iddisc =
     currentUser.id > secondUser.id
       ? currentUser.id + secondUser.id
@@ -30,12 +29,14 @@ export default function Chat(props) {
 
   const [data, setData] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [userTyping, setUserTyping] = useState(false); // L'autre utilisateur tape
+  const [isTyping, setIsTyping] = useState(false); // Statut "is typing..." pour l'utilisateur actuel
 
-  
+  // Charger les messages
   useEffect(() => {
     if (!currentUser || !secondUser) {
       console.error("User data is missing!");
-      return; 
+      return;
     }
 
     const listener = ref_unedisc.on("value", (snapshot) => {
@@ -49,14 +50,19 @@ export default function Chat(props) {
     return () => ref_unedisc.off("value", listener);
   }, [currentUser, secondUser]);
 
-  const sendMessage = () => {
-    if (newMessage.trim() === "") return; 
+  // Écoute du statut "is typing..."
+  useEffect(() => {
+    const typingRef = ref_unedisc.child("isTyping");
+    const typingListener = typingRef.on("value", (snapshot) => {
+      setUserTyping(snapshot.val() === currentUser.id ? false : snapshot.val() === secondUser.id);
+    });
 
-    
-    if (!currentUser.id || !secondUser.id) {
-      console.error("User IDs are missing!");
-      return; 
-    }
+    return () => typingRef.off("value", typingListener);
+  }, [currentUser.id, secondUser.id, ref_unedisc]);
+
+  // Envoyer un message
+  const sendMessage = () => {
+    if (newMessage.trim() === "") return;
 
     const key = ref_unedisc.push().key;
     const ref_unmessage = ref_unedisc.child(key);
@@ -65,15 +71,30 @@ export default function Chat(props) {
       .set({
         body: newMessage,
         time: new Date().toLocaleString(),
-        sender: currentUser.id, 
-        receiver: secondUser.id, 
+        sender: currentUser.id,
+        receiver: secondUser.id,
       })
       .then(() => {
-        setNewMessage(""); 
+        setNewMessage(""); // Réinitialiser le message
       })
       .catch((error) => {
         console.error("Error sending message: ", error);
       });
+
+    handleBlur(); // Arrêter "is typing..." après l'envoi
+  };
+
+  // Handle "is typing..." events
+  const handleFocus = () => {
+    const typingRef = ref_unedisc.child("isTyping");
+    typingRef.set(currentUser.id); // Marque que l'utilisateur actuel tape
+    setIsTyping(true);
+  };
+
+  const handleBlur = () => {
+    const typingRef = ref_unedisc.child("isTyping");
+    typingRef.set(null); // Supprime le statut "is typing"
+    setIsTyping(false);
   };
 
   return (
@@ -82,23 +103,18 @@ export default function Chat(props) {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={0}
     >
- 
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerInfo}>
           <View style={styles.profilePicture}>
-            <Text style={styles.profileText}>
-              {secondUser.nom ? secondUser.nom[0] : ''} 
-            </Text>
+            <Text style={styles.profileText}>{secondUser.nom ? secondUser.nom[0] : ""}</Text>
           </View>
           <View>
-            <Text style={styles.headerText}>
-              {secondUser.nom ? secondUser.nom : ''} 
-            </Text>
+            <Text style={styles.headerText}>{secondUser.nom ? secondUser.nom : ""}</Text>
             <Text style={styles.statusText}>Last seen today at 3:00 PM</Text>
           </View>
         </View>
 
-       
         <View style={styles.callIcons}>
           <TouchableOpacity onPress={() => console.log("Voice Call pressed")}>
             <Icon name="phone" style={styles.callIcon} />
@@ -109,30 +125,29 @@ export default function Chat(props) {
         </View>
       </View>
 
-      
+      {/* Messages */}
       <FlatList
         data={data}
         renderItem={({ item }) => (
           <View
             style={[
               styles.messageContainer,
-              item.sender === currentUser.id
-                ? styles.messageSent
-                : styles.messageReceived,
+              item.sender === currentUser.id ? styles.messageSent : styles.messageReceived,
             ]}
           >
-            <Text style={styles.messageText}>
-              {item.body ? item.body : ''} 
-            </Text>
-            <Text style={styles.messageTime}>
-              {item.time ? item.time : ''} 
-            </Text>
+            <Text style={styles.messageText}>{item.body ? item.body : ""}</Text>
+            <Text style={styles.messageTime}>{item.time ? item.time : ""}</Text>
           </View>
         )}
         keyExtractor={(item, index) => index.toString()}
         ListHeaderComponent={<View style={{ padding: 10 }} />}
         contentContainerStyle={styles.messagesContainer}
       />
+
+      {/* Typing Indicator */}
+      <View style={styles.typingIndicator}>
+        {userTyping && <Text style={styles.typingText}>{secondUser.nom} est en train d'écrire...</Text>}
+      </View>
 
       {/* Input Area */}
       <View style={styles.inputContainer}>
@@ -142,6 +157,8 @@ export default function Chat(props) {
           value={newMessage}
           onChangeText={setNewMessage}
           multiline
+          onFocus={handleFocus}
+          onBlur={handleBlur}
         />
         <Button onPress={sendMessage} title="Envoyer" />
       </View>
@@ -156,15 +173,14 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 15,
-    backgroundColor: "#007BFF", 
+    backgroundColor: "#007BFF",
     flexDirection: "row",
     alignItems: "center",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
-    justifyContent: "space-between", 
+    justifyContent: "space-between",
   },
   headerInfo: {
-    marginTop:10,
     flexDirection: "row",
     alignItems: "center",
   },
@@ -179,7 +195,7 @@ const styles = StyleSheet.create({
   },
   profileText: {
     fontSize: 18,
-    color: "#007BFF", 
+    color: "#007BFF",
     fontWeight: "bold",
   },
   headerText: {
@@ -192,14 +208,13 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   callIcons: {
-    marginTop:10,
     flexDirection: "row",
     alignItems: "center",
   },
   callIcon: {
     fontSize: 25,
     color: "#fff",
-    marginLeft: 23, 
+    marginLeft: 23,
   },
   messagesContainer: {
     paddingVertical: 10,
@@ -229,6 +244,15 @@ const styles = StyleSheet.create({
     color: "#666",
     textAlign: "right",
     marginTop: 5,
+  },
+  typingIndicator: {
+    marginVertical: 5,
+    alignItems: "center",
+  },
+  typingText: {
+    fontSize: 14,
+    fontStyle: "italic",
+    color: "#666",
   },
   inputContainer: {
     flexDirection: "row",
