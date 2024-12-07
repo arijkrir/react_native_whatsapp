@@ -18,14 +18,13 @@ export default function ListProfile(props) {
   const navigation = useNavigation();
   const database = firebase.database();
   const ref_lesprofils = database.ref("lesprofiles");
-  const currentid=props.route.params.currentid;
+  const currentid = props.route.params.currentid;
 
   useEffect(() => {
     const listener = ref_lesprofils.on("value", (snapshot) => {
       const d = [];
       snapshot.forEach((unprofil) => {
-        if (unprofil.val().id !=currentid)
-        d.push(unprofil.val());
+        if (unprofil.val().id !== currentid) d.push(unprofil.val());
       });
       setData(d);
     });
@@ -33,19 +32,31 @@ export default function ListProfile(props) {
   }, []);
 
   return (
-    <ImageBackground source={require("../../assets/images.jpeg")} style={styles.container}>
+    <ImageBackground
+      source={require("../../assets/images.jpeg")}
+      style={styles.container}
+    >
       <StatusBar style="light" />
       <Text style={styles.textstyle}>Liste des profils</Text>
       <FlatList
         data={data}
         renderItem={({ item }) => (
           <View style={styles.profileContainer}>
-            <Image
-              source={item.urlImage ? { uri: item.urlImage} : require("../../assets/profile.png")}
-              style={styles.profileImage}
-            />
+            <View style={styles.profileImageContainer}>
+              <Image
+                source={
+                  item.urlImage
+                    ? { uri: item.urlImage }
+                    : require("../../assets/profile.png")
+                }
+                style={styles.profileImage}
+              />
+              {item.isOnline && <View style={styles.onlineIndicator} />}
+            </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{item.nom} {item.pseudo}</Text>
+              <Text style={styles.profileName}>
+                {item.nom} {item.pseudo}
+              </Text>
             </View>
             <View style={styles.iconsContainer}>
               <TouchableOpacity onPress={() => alert(`Appel vers ${item.nom}`)}>
@@ -55,7 +66,7 @@ export default function ListProfile(props) {
                 onPress={() =>
                   navigation.navigate("Chat", {
                     currentUser: { id: currentid, nom: "Utilisateur actuel" },
-                    secondUser: item,
+                    secondUser: item,  // Envoi direct de l'objet item
                   })
                 }
               >
@@ -64,7 +75,7 @@ export default function ListProfile(props) {
             </View>
           </View>
         )}
-        keyExtractor={(item) => item.id} 
+        keyExtractor={(item) => item.id}
         style={styles.flatListContainer}
       />
     </ImageBackground>
@@ -98,10 +109,24 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
+  profileImageContainer: {
+    position: "relative",
+  },
   profileImage: {
     width: 60,
     height: 60,
     borderRadius: 25,
+  },
+  onlineIndicator: {
+    position: "absolute",
+    bottom: 5,
+    right: 5,
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: "green",
+    borderWidth: 2,
+    borderColor: "#fff",
   },
   profileInfo: {
     flex: 1,

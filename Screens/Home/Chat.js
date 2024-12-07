@@ -9,6 +9,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  Animated,
+  Image,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import firebase from "../../Config/Index";
 import Icon from "react-native-vector-icons/FontAwesome";
@@ -17,9 +21,9 @@ const database = firebase.database();
 const ref_lesMessage = database.ref("Discussions");
 
 export default function Chat(props) {
-  const currentUser = props.route.params.currentUser;
-  const secondUser = props.route.params.secondUser;
+  const { currentUser, secondUser } = props.route.params;
 
+  // Création de l'ID de discussion basé sur l'ID des deux utilisateurs
   const iddisc =
     currentUser.id > secondUser.id
       ? currentUser.id + secondUser.id
@@ -29,16 +33,12 @@ export default function Chat(props) {
 
   const [data, setData] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [userTyping, setUserTyping] = useState(false); // L'autre utilisateur tape
-  const [isTyping, setIsTyping] = useState(false); // Statut "is typing..." pour l'utilisateur actuel
+  const [userTyping, setUserTyping] = useState(false);
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [isOnline, setIsOnline] = useState(false);
 
   // Charger les messages
   useEffect(() => {
-    if (!currentUser || !secondUser) {
-      console.error("User data is missing!");
-      return;
-    }
-
     const listener = ref_unedisc.on("value", (snapshot) => {
       const d = [];
       snapshot.forEach((message) => {
@@ -48,17 +48,27 @@ export default function Chat(props) {
     });
 
     return () => ref_unedisc.off("value", listener);
-  }, [currentUser, secondUser]);
+  }, []);
 
-  // Écoute du statut "is typing..."
+  // Vérifier si le second utilisateur est en ligne
   useEffect(() => {
-    const typingRef = ref_unedisc.child("isTyping");
-    const typingListener = typingRef.on("value", (snapshot) => {
-      setUserTyping(snapshot.val() === currentUser.id ? false : snapshot.val() === secondUser.id);
+    const ref_online = database.ref(`lesprofiles/${secondUser.id}/isOnline`);
+
+    const listener = ref_online.on("value", (snapshot) => {
+      setIsOnline(snapshot.val() === true);
     });
 
-    return () => typingRef.off("value", typingListener);
-  }, [currentUser.id, secondUser.id, ref_unedisc]);
+    return () => ref_online.off("value", listener);
+  }, [secondUser.id]);
+
+  // Animation pour "is typing..."
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: userTyping ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [userTyping]);
 
   // Envoyer un message
   const sendMessage = () => {
@@ -71,30 +81,30 @@ export default function Chat(props) {
       .set({
         body: newMessage,
         time: new Date().toLocaleString(),
-        sender: currentUser.id,
-        receiver: secondUser.id,
+        sender: currentUser.id,  // Utilisation de l'ID de l'utilisateur actuel
+        receiver: secondUser.id,  // Utilisation de l'ID du second utilisateur
       })
       .then(() => {
-        setNewMessage(""); // Réinitialiser le message
+        setNewMessage("");
       })
       .catch((error) => {
         console.error("Error sending message: ", error);
       });
 
-    handleBlur(); // Arrêter "is typing..." après l'envoi
+    handleBlur();
   };
 
-  // Handle "is typing..." events
+  // Gestion du statut "is typing..."
   const handleFocus = () => {
     const typingRef = ref_unedisc.child("isTyping");
-    typingRef.set(currentUser.id); // Marque que l'utilisateur actuel tape
-    setIsTyping(true);
+    typingRef.set(currentUser.id);  // Indiquer que l'utilisateur actuel est en train d'écrire
+    setUserTyping(true);
   };
 
   const handleBlur = () => {
     const typingRef = ref_unedisc.child("isTyping");
-    typingRef.set(null); // Supprime le statut "is typing"
-    setIsTyping(false);
+    typingRef.set(null);  // Effacer le statut "is typing"
+    setUserTyping(false);
   };
 
   return (
@@ -103,65 +113,89 @@ export default function Chat(props) {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={0}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerInfo}>
-          <View style={styles.profilePicture}>
-            <Text style={styles.profileText}>{secondUser.nom ? secondUser.nom[0] : ""}</Text>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerInfo}>
+              <View style={styles.profilePictureContainer}>
+                {secondUser.urlImage ? (
+                  <Image
+                    source={{ uri: secondUser.urlImage }}
+                    style={styles.profilePicture}
+                  />
+                ) : (
+                  <View style={styles.profilePicture}>
+                    <Text style={styles.profileText}>
+                      {secondUser.nom ? secondUser.nom[0] : ""}
+                    </Text>
+                  </View>
+                )}
+                {isOnline && <View style={styles.onlineIndicator} />}
+              </View>
+              <View>
+                <Text style={styles.headerText}>{secondUser.nom} {secondUser.pseudo}</Text>
+                <Text style={styles.statusText}>
+                  {isOnline ? "En ligne" : "Hors ligne"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Icônes d'appel vocal et vidéo */}
+            <View style={styles.callIcons}>
+              <TouchableOpacity onPress={() => alert("Appel vocal...")}>
+                <Icon name="phone" style={styles.callIcon} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => alert("Appel vidéo...")}>
+                <Icon name="video-camera" style={styles.callIcon} />
+              </TouchableOpacity>
+            </View>
           </View>
-          <View>
-            <Text style={styles.headerText}>{secondUser.nom ? secondUser.nom : ""}</Text>
-            <Text style={styles.statusText}>Last seen today at 3:00 PM</Text>
+
+          {/* Messages */}
+          <FlatList
+            data={data}
+            renderItem={({ item }) => (
+              <View
+                style={[
+                  styles.messageContainer,
+                  item.sender === currentUser.id
+                    ? styles.messageSent
+                    : styles.messageReceived,
+                ]}
+              >
+                <Text style={styles.messageText}>{item.body}</Text>
+                <Text style={styles.messageTime}>{item.time}</Text>
+              </View>
+            )}
+            keyExtractor={(item, index) => index.toString()}
+            contentContainerStyle={styles.messagesContainer}
+          />
+
+          {/* Typing Indicator */}
+          <View style={styles.typingIndicator}>
+            {userTyping && (
+              <Animated.Text style={[styles.typingText, { opacity: fadeAnim }]}>
+                {secondUser.nom} est en train d'écrire...
+              </Animated.Text>
+            )}
+          </View>
+
+          {/* Zone d'entrée */}
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Écrire un message..."
+              value={newMessage}
+              onChangeText={setNewMessage}
+              multiline
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+            />
+            <Button onPress={sendMessage} title="Envoyer" />
           </View>
         </View>
-
-        <View style={styles.callIcons}>
-          <TouchableOpacity onPress={() => console.log("Voice Call pressed")}>
-            <Icon name="phone" style={styles.callIcon} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => console.log("Video Call pressed")}>
-            <Icon name="video-camera" style={styles.callIcon} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Messages */}
-      <FlatList
-        data={data}
-        renderItem={({ item }) => (
-          <View
-            style={[
-              styles.messageContainer,
-              item.sender === currentUser.id ? styles.messageSent : styles.messageReceived,
-            ]}
-          >
-            <Text style={styles.messageText}>{item.body ? item.body : ""}</Text>
-            <Text style={styles.messageTime}>{item.time ? item.time : ""}</Text>
-          </View>
-        )}
-        keyExtractor={(item, index) => index.toString()}
-        ListHeaderComponent={<View style={{ padding: 10 }} />}
-        contentContainerStyle={styles.messagesContainer}
-      />
-
-      {/* Typing Indicator */}
-      <View style={styles.typingIndicator}>
-        {userTyping && <Text style={styles.typingText}>{secondUser.nom} est en train d'écrire...</Text>}
-      </View>
-
-      {/* Input Area */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Écrire un message..."
-          value={newMessage}
-          onChangeText={setNewMessage}
-          multiline
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-        />
-        <Button onPress={sendMessage} title="Envoyer" />
-      </View>
+      </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }
@@ -172,7 +206,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
   },
   header: {
-    padding: 15,
+    padding: 10,
     backgroundColor: "#007BFF",
     flexDirection: "row",
     alignItems: "center",
@@ -184,24 +218,40 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  profilePictureContainer: {
+    position: "relative",
+  },
   profilePicture: {
     width: 50,
     height: 50,
-    borderRadius: 50,
+    borderRadius: 25, // Cercle
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 15,
+    marginRight:15,
+    marginTop:10
   },
   profileText: {
     fontSize: 18,
     color: "#007BFF",
     fontWeight: "bold",
   },
+  onlineIndicator: {
+    position: "absolute",
+    bottom: 5,
+    right: 5,
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: "green",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
   headerText: {
     fontSize: 20,
     color: "#fff",
     fontWeight: "bold",
+    marginTop:10
   },
   statusText: {
     fontSize: 12,
@@ -210,11 +260,13 @@ const styles = StyleSheet.create({
   callIcons: {
     flexDirection: "row",
     alignItems: "center",
+    marginRight:15,
+    marginTop:10
   },
   callIcon: {
     fontSize: 25,
     color: "#fff",
-    marginLeft: 23,
+    marginLeft: 25,
   },
   messagesContainer: {
     paddingVertical: 10,
