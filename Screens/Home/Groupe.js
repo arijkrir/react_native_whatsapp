@@ -8,6 +8,7 @@ import {
   TextInput,
   Modal,
   ImageBackground,
+  Alert,
 } from "react-native";
 import { Ionicons } from "react-native-vector-icons";
 import firebase from "../../Config/Index";
@@ -19,9 +20,12 @@ const ref_profiles = database.ref("lesprofiles");
 export default function Groupe(props) {
   const [groups, setGroups] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false); // State to handle edit group modal
   const [groupName, setGroupName] = useState("");
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [editingGroupId, setEditingGroupId] = useState(null); // State to track which group is being edited
+  const [newGroupName, setNewGroupName] = useState(""); // For updating group name
   const currentid = firebase.auth().currentUser.uid;
 
   useEffect(() => {
@@ -90,15 +94,20 @@ export default function Groupe(props) {
     >
       <Text style={styles.groupName}>{item.name}</Text>
       <Ionicons name="chevron-forward-outline" size={24} color="#FFF" />
+      
+      {/* Edit and Delete Options */}
+      <TouchableOpacity onPress={() => handleEditGroup(item)}>
+        <Ionicons name="create-outline" size={20} color="#FFF" />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => handleDeleteGroup(item.id)}>
+        <Ionicons name="trash-bin-outline" size={20} color="#FF3E4D" />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 
   const renderUserItem = ({ item }) => (
     <TouchableOpacity
-      style={[
-        styles.userItem,
-        selectedUsers.includes(item.id) && styles.selectedUser,
-      ]}
+      style={[styles.userItem, selectedUsers.includes(item.id) && styles.selectedUser]}
       onPress={() => toggleUserSelection(item.id)}
     >
       <Text style={[styles.userName, selectedUsers.includes(item.id) && styles.selectedUserText]}>
@@ -106,6 +115,49 @@ export default function Groupe(props) {
       </Text>
     </TouchableOpacity>
   );
+
+  const handleEditGroup = (group) => {
+    setEditingGroupId(group.id);
+    setNewGroupName(group.name);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateGroupName = () => {
+    if (newGroupName.trim() === "") {
+      alert("Veuillez entrer un nouveau nom pour le groupe.");
+      return;
+    }
+
+    const groupRef = ref_groupes.child(editingGroupId);
+    groupRef.update({
+      name: newGroupName,
+    });
+
+    alert("Nom du groupe mis à jour !");
+    setShowEditModal(false);
+    setNewGroupName("");
+  };
+
+  const handleDeleteGroup = (groupId) => {
+    Alert.alert(
+      "Supprimer le groupe",
+      "Êtes-vous sûr de vouloir supprimer ce groupe ?",
+      [
+        {
+          text: "Annuler",
+          style: "cancel",
+        },
+        {
+          text: "Supprimer",
+          onPress: () => {
+            const groupRef = ref_groupes.child(groupId);
+            groupRef.remove();
+            alert("Groupe supprimé avec succès !");
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <ImageBackground
@@ -132,6 +184,7 @@ export default function Groupe(props) {
           }
         />
 
+        {/* Modal for Creating Group */}
         <Modal visible={showModal} animationType="slide">
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>Créer un groupe</Text>
@@ -156,6 +209,31 @@ export default function Groupe(props) {
             <TouchableOpacity
               style={styles.closeButton}
               onPress={() => setShowModal(false)}
+            >
+              <Ionicons name="close-circle-outline" size={30} color="#FF3E4D" />
+            </TouchableOpacity>
+          </View>
+        </Modal>
+
+        {/* Modal for Editing Group */}
+        <Modal visible={showEditModal} animationType="slide">
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Modifier le nom du groupe</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Nouveau nom du groupe"
+              value={newGroupName}
+              onChangeText={setNewGroupName}
+            />
+
+            <TouchableOpacity style={styles.createButton} onPress={handleUpdateGroupName}>
+              <Text style={styles.createButtonText}>Mettre à jour</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowEditModal(false)}
             >
               <Ionicons name="close-circle-outline" size={30} color="#FF3E4D" />
             </TouchableOpacity>

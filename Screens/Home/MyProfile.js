@@ -109,6 +109,7 @@ export default function MyProfile(props) {
 
       // Ajouter ou mettre à jour le profil sous ce nouvel ID
       await newProfileRef.set({
+        id: newProfileId,
         nom,
         pseudo,
         telephone,

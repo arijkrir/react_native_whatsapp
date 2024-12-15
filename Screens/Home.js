@@ -9,6 +9,7 @@ const Tab = createMaterialBottomTabNavigator();
 
 export default function Home(props) {
   const currentid = props.route.params.currentid;
+  console.log(currentid);
 
   return (
     <Tab.Navigator

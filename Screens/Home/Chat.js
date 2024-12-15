@@ -1,21 +1,26 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   FlatList,
-  Button,
   TextInput,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
   TouchableOpacity,
   Animated,
   Image,
-  Keyboard,
   TouchableWithoutFeedback,
+  Keyboard,
+  Button,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import { Audio } from "expo-av";
+import * as Location from "expo-location";
 import firebase from "../../Config/Index";
 import Icon from "react-native-vector-icons/FontAwesome";
+import { KeyboardAvoidingView } from 'react-native';
+import { Platform } from 'react-native';
+
 
 const database = firebase.database();
 const ref_lesMessage = database.ref("Discussions");
@@ -23,7 +28,6 @@ const ref_lesMessage = database.ref("Discussions");
 export default function Chat(props) {
   const { currentUser, secondUser } = props.route.params;
 
-  // Création de l'ID de discussion basé sur l'ID des deux utilisateurs
   const iddisc =
     currentUser.id > secondUser.id
       ? currentUser.id + secondUser.id
@@ -36,8 +40,11 @@ export default function Chat(props) {
   const [userTyping, setUserTyping] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [isOnline, setIsOnline] = useState(false);
+  const [recording, setRecording] = useState(null);
+  const [isBubbleVisible, setIsBubbleVisible] = useState(false); // State to control the visibility of the bubble
 
-  // Charger les messages
+  const ref_currentistyping = ref_unedisc.child(`${currentUser.id}isTyping`);
+
   useEffect(() => {
     const listener = ref_unedisc.on("value", (snapshot) => {
       const d = [];
@@ -50,7 +57,6 @@ export default function Chat(props) {
     return () => ref_unedisc.off("value", listener);
   }, []);
 
-  // Vérifier si le second utilisateur est en ligne
   useEffect(() => {
     const ref_online = database.ref(`lesprofiles/${secondUser.id}/isOnline`);
 
@@ -61,7 +67,6 @@ export default function Chat(props) {
     return () => ref_online.off("value", listener);
   }, [secondUser.id]);
 
-  // Animation pour "is typing..."
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: userTyping ? 1 : 0,
@@ -70,22 +75,22 @@ export default function Chat(props) {
     }).start();
   }, [userTyping]);
 
-  // Envoyer un message
-  const sendMessage = () => {
-    if (newMessage.trim() === "") return;
+  const sendMessage = (messageContent, type = "text") => {
+    if (!messageContent.trim() && type === "text") return;
 
     const key = ref_unedisc.push().key;
     const ref_unmessage = ref_unedisc.child(key);
 
     ref_unmessage
       .set({
-        body: newMessage,
+        body: messageContent,
         time: new Date().toLocaleString(),
-        sender: currentUser.id,  // Utilisation de l'ID de l'utilisateur actuel
-        receiver: secondUser.id,  // Utilisation de l'ID du second utilisateur
+        sender: currentUser.id,
+        receiver: secondUser.id,
+        type,
       })
       .then(() => {
-        setNewMessage("");
+        if (type === "text") setNewMessage("");
       })
       .catch((error) => {
         console.error("Error sending message: ", error);
@@ -94,17 +99,93 @@ export default function Chat(props) {
     handleBlur();
   };
 
-  // Gestion du statut "is typing..."
   const handleFocus = () => {
-    const typingRef = ref_unedisc.child("isTyping");
-    typingRef.set(currentUser.id);  // Indiquer que l'utilisateur actuel est en train d'écrire
+    ref_currentistyping.set(true);
     setUserTyping(true);
   };
 
   const handleBlur = () => {
-    const typingRef = ref_unedisc.child("isTyping");
-    typingRef.set(null);  // Effacer le statut "is typing"
+    ref_currentistyping.set(false);
     setUserTyping(false);
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      sendMessage(result.assets[0].uri, "image");
+    }
+  };
+
+  const pickFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: "*/*",
+    });
+
+    if (result.type === "success") {
+      sendMessage(result.uri, "file");
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== "granted") {
+        alert("Permission d'enregistrement refusée.");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
+      );
+      setRecording(recording);
+    } catch (err) {
+      console.error("Failed to start recording", err);
+    }
+  };
+
+  const stopRecording = async () => {
+    try {
+      if (!recording) return;
+
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+
+      if (uri) {
+        sendMessage(uri, "audio");
+      }
+    } catch (err) {
+      console.error("Failed to stop recording", err);
+    }
+  };
+
+  const sendLocation = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") {
+      alert("Permission pour accéder à la localisation refusée.");
+      return;
+    }
+
+    let location = await Location.getCurrentPositionAsync({});
+    const locationMessage = `https://www.google.com/maps?q=${location.coords.latitude},${location.coords.longitude}`;
+    sendMessage(locationMessage, "location");
+  };
+
+  const toggleBubble = () => {
+    setIsBubbleVisible(!isBubbleVisible); // Toggle the visibility of the bubble
   };
 
   return (
@@ -115,7 +196,6 @@ export default function Chat(props) {
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.container}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerInfo}>
               <View style={styles.profilePictureContainer}>
@@ -134,14 +214,14 @@ export default function Chat(props) {
                 {isOnline && <View style={styles.onlineIndicator} />}
               </View>
               <View>
-                <Text style={styles.headerText}>{secondUser.nom} {secondUser.pseudo}</Text>
+                <Text style={styles.headerText}>
+                  {secondUser.nom} {secondUser.pseudo}
+                </Text>
                 <Text style={styles.statusText}>
                   {isOnline ? "En ligne" : "Hors ligne"}
                 </Text>
               </View>
             </View>
-
-            {/* Icônes d'appel vocal et vidéo */}
             <View style={styles.callIcons}>
               <TouchableOpacity onPress={() => alert("Appel vocal...")}>
                 <Icon name="phone" style={styles.callIcon} />
@@ -152,7 +232,6 @@ export default function Chat(props) {
             </View>
           </View>
 
-          {/* Messages */}
           <FlatList
             data={data}
             renderItem={({ item }) => (
@@ -164,7 +243,28 @@ export default function Chat(props) {
                     : styles.messageReceived,
                 ]}
               >
-                <Text style={styles.messageText}>{item.body}</Text>
+                {item.type === "text" && <Text style={styles.messageText}>{item.body}</Text>}
+                {item.type === "image" && (
+                  <Image
+                    source={{ uri: item.body }}
+                    style={styles.messageImage}
+                    resizeMode="contain"
+                  />
+                )}
+                {item.type === "file" && (
+                  <Text style={styles.messageFile}>Fichier : {item.body}</Text>
+                )}
+                {item.type === "audio" && (
+                  <Text style={styles.messageAudio}>Message audio envoyé</Text>
+                )}
+                {item.type === "location" && (
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(item.body)}
+                    style={styles.messageLocation}
+                  >
+                    <Text style={styles.messageLocationText}>Voir la localisation</Text>
+                  </TouchableOpacity>
+                )}
                 <Text style={styles.messageTime}>{item.time}</Text>
               </View>
             )}
@@ -172,16 +272,14 @@ export default function Chat(props) {
             contentContainerStyle={styles.messagesContainer}
           />
 
-          {/* Typing Indicator */}
           <View style={styles.typingIndicator}>
             {userTyping && (
               <Animated.Text style={[styles.typingText, { opacity: fadeAnim }]}>
-                {secondUser.nom} est en train d'écrire...
+                {secondUser.nom} est en train d’écrire...
               </Animated.Text>
             )}
           </View>
 
-          {/* Zone d'entrée */}
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
@@ -189,10 +287,34 @@ export default function Chat(props) {
               value={newMessage}
               onChangeText={setNewMessage}
               multiline
+              numberOfLines={4}
               onFocus={handleFocus}
               onBlur={handleBlur}
             />
-            <Button onPress={sendMessage} title="Envoyer" />
+            <Button onPress={() => sendMessage(newMessage)} title="Envoyer" />
+
+            {/* Bubble button */}
+            <TouchableOpacity onPress={toggleBubble}>
+              <Icon name="plus" style={styles.icon} />
+            </TouchableOpacity>
+
+            {/* Bubble with icons */}
+            {isBubbleVisible && (
+              <View style={styles.bubbleContainer}>
+                <TouchableOpacity onPress={pickImage}>
+                  <Icon name="image" style={styles.bubbleIcon} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={pickFile}>
+                  <Icon name="paperclip" style={styles.bubbleIcon} />
+                </TouchableOpacity>
+                <TouchableOpacity onPressIn={startRecording} onPressOut={stopRecording}>
+                  <Icon name="microphone" style={styles.bubbleIcon} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={sendLocation}>
+                  <Icon name="location-arrow" style={styles.bubbleIcon} />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </TouchableWithoutFeedback>
@@ -224,12 +346,12 @@ const styles = StyleSheet.create({
   profilePicture: {
     width: 50,
     height: 50,
-    borderRadius: 25, // Cercle
+    borderRadius: 25,
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
-    marginRight:15,
-    marginTop:10
+    marginRight: 15,
+    marginTop: 10,
   },
   profileText: {
     fontSize: 18,
@@ -251,7 +373,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: "#fff",
     fontWeight: "bold",
-    marginTop:10
+    marginTop: 10,
   },
   statusText: {
     fontSize: 12,
@@ -260,8 +382,8 @@ const styles = StyleSheet.create({
   callIcons: {
     flexDirection: "row",
     alignItems: "center",
-    marginRight:15,
-    marginTop:10
+    marginRight: 15,
+    marginTop: 10,
   },
   callIcon: {
     fontSize: 25,
@@ -277,6 +399,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     maxWidth: "75%",
     alignSelf: "flex-start",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ccc",
   },
   messageSent: {
     backgroundColor: "#DCF8C6",
@@ -284,8 +409,6 @@ const styles = StyleSheet.create({
   },
   messageReceived: {
     backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ccc",
   },
   messageText: {
     fontSize: 16,
@@ -322,5 +445,31 @@ const styles = StyleSheet.create({
     padding: 10,
     marginRight: 10,
     backgroundColor: "#f9f9f9",
+    maxHeight: 100,
+  },
+  icon: {
+    fontSize: 24,
+    color: "#007BFF",
+    marginLeft: 10,
+  },
+  bubbleContainer: {
+    position: "absolute",
+    bottom: 55,
+    right:0,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    width: 200,
+    zIndex: 1,
+  },
+  bubbleIcon: {
+    fontSize: 20,
+    color: "#007BFF",
+    marginHorizontal: 10,
   },
 });

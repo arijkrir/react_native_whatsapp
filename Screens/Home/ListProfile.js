@@ -21,14 +21,20 @@ export default function ListProfile(props) {
   const currentid = props.route.params.currentid;
 
   useEffect(() => {
+    console.log("useEffect called");
     const listener = ref_lesprofils.on("value", (snapshot) => {
+      console.log("snapshot received");
       const d = [];
       snapshot.forEach((unprofil) => {
         if (unprofil.val().id !== currentid) d.push(unprofil.val());
       });
+      console.log("data updated", d);
       setData(d);
     });
-    return () => ref_lesprofils.off("value", listener);
+    return () => {
+      console.log("listener removed");
+      ref_lesprofils.off("value", listener);
+    };
   }, []);
 
   return (
@@ -40,41 +46,50 @@ export default function ListProfile(props) {
       <Text style={styles.textstyle}>Liste des profils</Text>
       <FlatList
         data={data}
-        renderItem={({ item }) => (
-          <View style={styles.profileContainer}>
-            <View style={styles.profileImageContainer}>
-              <Image
-                source={
-                  item.urlImage
-                    ? { uri: item.urlImage }
-                    : require("../../assets/profile.png")
-                }
-                style={styles.profileImage}
-              />
-              {item.isOnline && <View style={styles.onlineIndicator} />}
+        renderItem={({ item }) => {
+          console.log("rendering item", item);
+          return (
+            <View style={styles.profileContainer}>
+              <View style={styles.profileImageContainer}>
+                <Image
+                  source={
+                    item.urlImage
+                      ? { uri: item.urlImage }
+                      : require("../../assets/profile.png")
+                  }
+                  style={styles.profileImage}
+                />
+                {item.isOnline && <View style={styles.onlineIndicator} />}
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={styles.profileName}>
+                  {item.nom} {item.pseudo}
+                </Text>
+              </View>
+              <View style={styles.iconsContainer}>
+                <TouchableOpacity
+                  onPress={() => {
+                    console.log("call button pressed");
+                    alert(`Appel vers ${item.nom}`);
+                  }}
+                >
+                  <Ionicons name="call-outline" size={24} color="#07f" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    console.log("chat button pressed");
+                    navigation.navigate("Chat", {
+                      currentUser: { id: currentid, nom: "Utilisateur actuel" },
+                      secondUser: item,
+                    });
+                  }}
+                >
+                  <Ionicons name="chatbubbles-outline" size={24} color="#07f" />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>
-                {item.nom} {item.pseudo}
-              </Text>
-            </View>
-            <View style={styles.iconsContainer}>
-              <TouchableOpacity onPress={() => alert(`Appel vers ${item.nom}`)}>
-                <Ionicons name="call-outline" size={24} color="#07f" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate("Chat", {
-                    currentUser: { id: currentid, nom: "Utilisateur actuel" },
-                    secondUser: item,  // Envoi direct de l'objet item
-                  })
-                }
-              >
-                <Ionicons name="chatbubbles-outline" size={24} color="#07f" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+          );
+        }}
         keyExtractor={(item) => item.id}
         style={styles.flatListContainer}
       />
