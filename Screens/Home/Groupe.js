@@ -33,7 +33,11 @@ export default function Groupe(props) {
     const groupListener = ref_groupes.on("value", (snapshot) => {
       const groupes = [];
       snapshot.forEach((group) => {
-        groupes.push({ ...group.val(), id: group.key });
+        const groupData = { ...group.val(), id: group.key };
+        // Vérifier si l'utilisateur fait partie des membres du groupe
+        if (groupData.members.includes(currentid)) {
+          groupes.push(groupData);
+        }
       });
       setGroups(groupes);
     });

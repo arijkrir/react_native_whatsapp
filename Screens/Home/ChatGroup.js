@@ -1,56 +1,137 @@
+import { Image } from 'react-native';
 import React, { useState, useEffect } from "react";
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Modal, 
-  ScrollView 
+import {
+  View,
+  Text,
+  FlatList,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-import Icon from "react-native-vector-icons/MaterialIcons";
+import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 import firebase from "../../Config/Index";
+import * as ImagePicker from "expo-image-picker";
 
 const database = firebase.database();
 
 export default function ChatGroup({ route }) {
   const { groupId, groupName, members } = route.params;
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState("");
+  const [inputText, setInputText] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
-  const currentid = firebase.auth().currentUser.uid;
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [memberDetails, setMemberDetails] = useState([]); // Changer memberNames à memberDetails pour inclure pseudo et nom
+  const currentId = firebase.auth().currentUser.uid;
 
   useEffect(() => {
     const messagesRef = database.ref(`GroupMessages/${groupId}`);
     const listener = messagesRef.on("value", (snapshot) => {
-      const msgs = [];
-      snapshot.forEach((msg) => msgs.push({ ...msg.val(), id: msg.key }));
-      setMessages(msgs);
+      const fetchedMessages = [];
+      snapshot.forEach((msg) => {
+        if (msg.key !== "typing") {
+          fetchedMessages.push({ ...msg.val(), id: msg.key });
+        }
+      });
+      setMessages(fetchedMessages.reverse());
     });
 
-    return () => messagesRef.off("value", listener);
-  }, [groupId]);
+    const typingListener = database
+      .ref(`GroupMessages/${groupId}/typing`)
+      .on("value", (snapshot) => {
+        if (snapshot.val() && snapshot.val() !== currentId) {
+          setIsTyping(true);
+        } else {
+          setIsTyping(false);
+        }
+      });
+
+    // Récupérer les informations des membres du groupe
+    const fetchMemberDetails = async () => {
+      const details = [];
+      for (const memberId of members) {
+        const userRef = database.ref(`lesprofiles/${memberId}`); // Accédez à la collection "Profiles" pour obtenir le nom et le pseudo
+        const userSnapshot = await userRef.once('value');
+        const user = userSnapshot.val();
+        if (user) {
+          details.push({
+            name: user.nom, // Le nom complet de l'utilisateur
+            username: user.pseudo,
+            image: user.profileImage, // Le pseudo de l'utilisateur
+          });
+        }
+      }
+      setMemberDetails(details);
+    };
+
+    fetchMemberDetails();
+
+    return () => {
+      messagesRef.off("value", listener);
+      database.ref(`GroupMessages/${groupId}/typing`).off("value", typingListener);
+    };
+  }, [groupId, members]);
+
+  const handleInputChange = (text) => {
+    setInputText(text);
+    if (text) {
+      database.ref(`GroupMessages/${groupId}/typing`).set(currentId);
+    } else {
+      database.ref(`GroupMessages/${groupId}/typing`).set(null);
+    }
+  };
 
   const sendMessage = () => {
-    if (newMessage.trim() === "") return;
+    if (inputText.trim() === "" && !selectedImage) return;
+
+    const newMessage = {
+      id: Date.now().toString(),
+      text: inputText.trim(),
+      sender: currentId,
+      date: new Date().toISOString(),
+      image: selectedImage || null,
+    };
+
     const messagesRef = database.ref(`GroupMessages/${groupId}`);
-    messagesRef.push({
-      sender: currentid,
-      text: newMessage,
-      timestamp: Date.now(),
-    });
-    setNewMessage("");
+    messagesRef.push(newMessage);
+    database.ref(`GroupMessages/${groupId}/typing`).set(null);
+
+    setInputText("");
+    setSelectedImage(null);
   };
 
-  const initiateVoiceCall = () => {
-    console.log("Voice call initiated");
-    // Placeholder for voice call functionality
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 1,
+      });
+
+      if (!result.canceled) {
+        setSelectedImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      Alert.alert("Erreur", "Impossible de sélectionner une image.");
+    }
   };
 
-  const initiateVideoCall = () => {
-    console.log("Video call initiated");
-    // Placeholder for video call functionality
+  const renderMessage = ({ item }) => {
+    const isMe = item.sender === currentId;
+    const formattedDate = new Date(item.date).toLocaleTimeString();
+
+    return (
+      <View style={[styles.messageContainer, isMe ? styles.myMessage : styles.otherMessage]}>
+        {item.text && <Text style={styles.messageText}>{item.text}</Text>}
+        {item.image && <Image source={{ uri: item.image }} style={styles.messageImage} />}
+        <Text style={styles.timestamp}>{formattedDate}</Text>
+      </View>
+    );
   };
 
   return (
@@ -58,47 +139,38 @@ export default function ChatGroup({ route }) {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerText}>{groupName}</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity onPress={initiateVoiceCall} style={styles.iconButton}>
-            <Icon name="call" size={24} color="#FFF" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={initiateVideoCall} style={styles.iconButton}>
-            <Icon name="videocam" size={24} color="#FFF" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
-            <Icon name="group" size={24} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Messages */}
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View
-            style={[
-              styles.message,
-              item.sender === currentid ? styles.myMessage : styles.otherMessage,
-            ]}
-          >
-            <Text style={styles.messageText}>{item.text}</Text>
-          </View>
-        )}
-      />
-
-      {/* Input */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Écrire un message..."
-          value={newMessage}
-          onChangeText={setNewMessage}
-        />
-        <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
-          <Icon name="send" size={20} color="#FFF" />
+        <TouchableOpacity onPress={() => setShowMembers(true)} style={styles.iconButton}>
+          <Icon name="account-group" size={24} color="#FFF" />
         </TouchableOpacity>
       </View>
+
+      {/* Chat Body */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flexGrow}>
+        <FlatList
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messagesList}
+          inverted
+        />
+        {isTyping && <Text style={styles.typingIndicator}>Typing...</Text>}
+
+        {/* Input */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Écrire un message..."
+            value={inputText}
+            onChangeText={handleInputChange}
+          />
+          <TouchableOpacity style={styles.iconButton} onPress={pickImage}>
+            <Icon name="image" size={27} color="#4A90E2" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+            <Icon name="send" size={27} color="#4A90E2" />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
 
       {/* Members Modal */}
       <Modal visible={showMembers} transparent={true} animationType="slide">
@@ -106,10 +178,14 @@ export default function ChatGroup({ route }) {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Membres du groupe</Text>
             <ScrollView>
-              {members.map((member, index) => (
-                <Text key={index} style={styles.memberText}>
-                  {member}
-                </Text>
+              {memberDetails.map((member, index) => (
+                <View key={index} style={styles.memberContainer}>
+                  <Image source={{ uri: member.image }} style={styles.memberImage} />
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName}>{member.name}</Text>
+                    <Text style={styles.memberUsername}>{member.username}</Text>
+                  </View>
+                </View>
               ))}
             </ScrollView>
             <TouchableOpacity style={styles.closeButton} onPress={() => setShowMembers(false)}>
@@ -123,99 +199,65 @@ export default function ChatGroup({ route }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
+  container: { flex: 1, backgroundColor: "#F8F9FA" },
+  flexGrow: { flex: 1 },
+  messagesList: { paddingHorizontal: 10, paddingVertical: 15 },
+  messageContainer: {
+    maxWidth: "75%",
+    borderRadius: 20,
+    padding: 12,
+    marginVertical: 7,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 15,
-    backgroundColor: "#007BFF",
-  },
-  headerText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#FFF",
-  },
-  headerIcons: {
-    flexDirection: "row",
-  },
-  iconButton: {
-    marginHorizontal: 5,
-  },
-  message: {
-    margin: 10,
-    padding: 10,
-    borderRadius: 10,
-    maxWidth: "80%",
-  },
-  myMessage: {
-    alignSelf: "flex-end",
-    backgroundColor: "#007BFF",
-  },
-  otherMessage: {
-    alignSelf: "flex-start",
-    backgroundColor: "#E0E0E0",
-  },
-  messageText: {
-    color: "#FFF",
-  },
+  myMessage: { alignSelf: "flex-end", backgroundColor: "#4A90E2" },
+  otherMessage: { alignSelf: "flex-start", backgroundColor: "#6C757D" },
+  messageText: { color: "#fff", fontSize: 16 },
+  timestamp: { fontSize: 10, color: "#EDEDED", alignSelf: "flex-end", marginTop: 5 },
+  messageImage: { width: 200, height: 200, borderRadius: 10, marginVertical: 5 },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     padding: 10,
     borderTopWidth: 1,
-    borderColor: "#E0E0E0",
+    borderTopColor: "#ddd",
+    backgroundColor: "#fff",
   },
-  input: {
-    flex: 1,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    backgroundColor: "#FFF",
+  textInput: { flex: 1, height: 40, borderRadius: 20, paddingHorizontal: 10, backgroundColor: "#F1F3F5" },
+  iconButton: { marginLeft: 10 },
+  sendButton: { marginLeft: 15 },
+  header: { flexDirection: "row", alignItems: "center", padding: 15, backgroundColor: "#4A90E2" },
+  headerText: { fontSize: 20, fontWeight: "bold", color: "#FFF", flex: 1 },
+  typingIndicator: { textAlign: "center", fontStyle: "italic", color: "#6C757D", marginBottom: 10 },
+  modalContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" },
+  modalContent: { width: "80%", backgroundColor: "#FFF", borderRadius: 10, padding: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 10 },
+  closeButton: { marginTop: 20, backgroundColor: "#4A90E2", padding: 10, borderRadius: 10 },
+  closeButtonText: { color: "#FFF", fontWeight: "bold", textAlign: "center" },
+
+  // Member styles
+  memberContainer: {
+    flexDirection: 'row', // Image à gauche, texte à droite
+    alignItems: 'center',
+    marginBottom: 15, // Espacement entre les membres
   },
-  sendButton: {
-    marginLeft: 10,
-    backgroundColor: "#007BFF",
-    padding: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
+  memberImage: {
+    width: 40,  // Ajuster la taille de l'image du profil
+    height: 40, // Ajuster la taille de l'image du profil
+    borderRadius: 20, // Rendre l'image circulaire
+    marginRight: 10, // Espacement entre l'image et le texte
   },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
+  memberInfo: {
+    flexDirection: 'column', // Texte à afficher verticalement
   },
-  modalContent: {
-    width: "80%",
-    backgroundColor: "#FFF",
-    borderRadius: 10,
-    padding: 20,
-    elevation: 5,
+  memberName: {
+    fontSize: 16,  // Taille du nom du membre
+    fontWeight: 'bold',  // Mettre en gras le nom
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 10,
-  },
-  memberText: {
-    fontSize: 16,
-    marginBottom: 5,
-  },
-  closeButton: {
-    marginTop: 20,
-    backgroundColor: "#007BFF",
-    padding: 10,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  closeButtonText: {
-    color: "#FFF",
-    fontWeight: "bold",
+  memberUsername: {
+    fontSize: 14, // Taille du pseudo
+    color: '#6C757D', // Couleur plus claire pour le pseudo
   },
 });

@@ -166,16 +166,18 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 35,
+    borderColor:"#fff",
+    borderWidth:4,
   },
   onlineIndicator: {
     position: "absolute",
-    bottom: 5,
-    right: 5,
+    bottom: 3,
+    right: 3,
     width: 18,
     height: 18,
     borderRadius: 9,
     borderWidth: 3,
-    borderColor: "#fff", // White border for better visibility
+    borderColor: "#fff", 
   },
   profileInfo: {
     flex: 1,
@@ -191,10 +193,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
     width: 60,
-    marginLeft: 10, // Add a little space between the icons and the profile name
+    marginLeft: 10, 
   },
   icon: {
-    marginHorizontal: 6, // Reduced the margin to bring the icons closer together
+    marginHorizontal: 6, 
     padding: 5,
     borderRadius: 50,
     backgroundColor: "#f0f0f0",

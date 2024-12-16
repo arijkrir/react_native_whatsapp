@@ -12,20 +12,18 @@ import {
   Platform,
   Linking,
 } from "react-native";
-import { app, supabase } from '../../Config/Index';
+import firebase from "../../Config/Index"; // Ensure this is the correct path
 import { getDatabase, ref, push, set, onValue, child } from 'firebase/database';
-import * as Location from 'expo-location';
 import * as ImagePicker from "expo-image-picker";
 import { MaterialCommunityIcons } from '@expo/vector-icons'; // Import icons
 
-const database = getDatabase(app);
+const database = firebase.database(); // Firebase database reference
 
 export default function Chat(props) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [location, setLocation] = useState(null);
-  const [file, setFile] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   const profile = props.route.params.profile;
   const currentId = props.route.params.currentId;
@@ -67,17 +65,15 @@ export default function Chat(props) {
     }
   };
 
-  const sendMessage = async () => {
-    if (inputText.trim() === "" && !location && !file) return;
+  const sendMessage = () => {
+    if (inputText.trim() === "" && !selectedImage) return;
 
     const newMessage = {
       id: Date.now().toString(),
       text: inputText.trim(),
       sender: currentId,
       date: new Date().toISOString(),
-      receiver: profile.id,
-      location: location || null,
-      file: file || null,
+      image: selectedImage || null,
     };
 
     const newMessageRef = ref(database, `/lesDiscussions/${idDiscussion}`);
@@ -87,8 +83,7 @@ export default function Chat(props) {
       .then(() => {
         set(ref(database, `/lesDiscussions/${idDiscussion}/typing`), null);
         setInputText("");
-        setLocation(null);
-        setFile(null);
+        setSelectedImage(null);
       })
       .catch((error) => {
         console.error("Error sending message:", error);
@@ -96,80 +91,20 @@ export default function Chat(props) {
       });
   };
 
-  const sendLocation = async () => {
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert("Permission denied", "Location permission is required.");
-      return;
-    }
-
-    const userLocation = await Location.getCurrentPositionAsync({});
-    const message = {
-      id: Date.now().toString(),
-      text: "Shared Location",
-      sender: currentId,
-      date: new Date().toISOString(),
-      receiver: profile.id,
-      location: userLocation.coords,
-    };
-
-    setLocation(userLocation.coords);
-    sendMessageWithDetails(message);
-  };
-
-  const sendFile = async () => {
+  const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        aspect: [4, 3],
+        allowsEditing: true,
         quality: 1,
       });
 
-      if (result.canceled || !result.assets || result.assets.length === 0) {
-        Alert.alert("Error", "No valid image was selected.");
-        return;
+      if (!result.canceled) {
+        setSelectedImage(result.assets[0].uri);
       }
-
-      const uriLocal = result.assets[0].uri;
-      const response = await fetch(uriLocal);
-      const blob = await response.blob();
-      const arraybuffer = await new Response(blob).arrayBuffer();
-      await supabase.storage.from("ProfiliImages").upload(currentId, arraybuffer, {
-        upsert: true,
-      });
-
-      const { data } = supabase.storage.from("ProfiliImages").getPublicUrl(currentId);
-      const publicImageUrl = data.publicUrl;
-
-      const message = {
-        id: Date.now().toString(),
-        sender: currentId,
-        date: new Date().toISOString(),
-        receiver: profile.id,
-        file: publicImageUrl,
-      };
-
-      sendMessageWithDetails(message);
-      setFile(publicImageUrl);
     } catch (error) {
+      Alert.alert("Error", "Unable to select an image.");
     }
-  };
-
-  const sendMessageWithDetails = (message) => {
-    const newMessageRef = ref(database, `/lesDiscussions/${idDiscussion}`);
-    const newMessageKey = push(newMessageRef).key;
-
-    set(ref(database, `/lesDiscussions/${idDiscussion}/${newMessageKey}`), message)
-      .then(() => {
-        set(ref(database, `/lesDiscussions/${idDiscussion}/typing`), null);
-        setInputText("");
-        setLocation(null);
-        setFile(null);
-      })
-      .catch((error) => {
-        Alert.alert("Error", "Failed to send the message.");
-      });
   };
 
   const openUrl = (url) => {
@@ -190,9 +125,9 @@ export default function Chat(props) {
           </TouchableOpacity>
         )}
 
-        {item.file && item.file.includes('http') && (
+        {item.image && (
           <View style={styles.imageContainer}>
-            <Image source={{ uri: item.file }} style={styles.image} />
+            <Image source={{ uri: item.image }} style={styles.image} />
           </View>
         )}
 
@@ -243,7 +178,7 @@ export default function Chat(props) {
           <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
             <MaterialCommunityIcons name="send" size={27} color="#4A90E2" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={sendFile} style={styles.iconButton}>
+          <TouchableOpacity onPress={pickImage} style={styles.iconButton}>
             <MaterialCommunityIcons name="image" size={27} color="#4A90E2" />
           </TouchableOpacity>
         </View>
@@ -291,16 +226,6 @@ const styles = StyleSheet.create({
     color: "#EDEDED",
     alignSelf: "flex-end",
     marginTop: 5,
-  },
-  seenText: {
-    color: "#28A745",  // Green color for "Seen"
-    fontSize: 12,
-    marginTop: 5,
-    alignSelf: "flex-end",
-    fontWeight: 'bold',
-    backgroundColor: '#f8f9fa', // Add a light background for better visibility
-    padding: 5, // Add some padding to make the text stand out more
-    borderRadius: 5, // Optional: rounded corners for the background
   },
   typingIndicator: {
     textAlign: "center",
@@ -355,6 +280,7 @@ const styles = StyleSheet.create({
     marginRight: 3,
     marginTop: 10,
     borderColor: "#fff",
+    borderWidth:3,
   },
   onlineIndicatorGreen: {
     position: "absolute",
@@ -364,18 +290,18 @@ const styles = StyleSheet.create({
     height: 11,
     borderRadius: 5,
     backgroundColor: "#28A745",
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: "#fff",
   },
   onlineIndicatorGray: {
     position: "absolute",
     bottom: 2,
-    right: 2,
+    right: 5,
     width: 11,
     height: 11,
     borderRadius: 5,
     backgroundColor: "#6C757D",
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: "#fff",
   },
   textInfo: {
@@ -397,8 +323,8 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   image: {
-    width: 200,   // Limit the image width to avoid overflowing
-    height: 200,  // Limit the image height to avoid large images
-    borderRadius: 10,  // Optional: Adds rounded corners to the image
+    width: 200,   
+    height: 200,  
+    borderRadius: 10,
   },
 });
