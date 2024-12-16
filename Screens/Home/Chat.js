@@ -37,7 +37,8 @@ export default function Chat(props) {
       const fetchedMessages = [];
       snapshot.forEach((childSnapshot) => {
         if (childSnapshot.key !== "typing") {
-          fetchedMessages.push(childSnapshot.val());
+          const message = childSnapshot.val();
+          fetchedMessages.push(message);
         }
       });
       setMessages(fetchedMessages.reverse());
@@ -55,7 +56,7 @@ export default function Chat(props) {
       messagesListener();
       typingListener();
     };
-  }, []);
+  }, []); // Run only once when component mounts
 
   const handleInputChange = (text) => {
     setInputText(text);
@@ -143,7 +144,6 @@ export default function Chat(props) {
 
       const message = {
         id: Date.now().toString(),
-        text: "Shared Image",
         sender: currentId,
         date: new Date().toISOString(),
         receiver: profile.id,
@@ -153,7 +153,6 @@ export default function Chat(props) {
       sendMessageWithDetails(message);
       setFile(publicImageUrl);
     } catch (error) {
-      Alert.alert("Error", "Failed to send the file.");
     }
   };
 
@@ -184,16 +183,19 @@ export default function Chat(props) {
     return (
       <View style={[styles.messageContainer, isMe ? styles.myMessage : styles.otherMessage]}>
         <Text style={styles.messageText}>{item.text}</Text>
+
         {item.location && (
           <TouchableOpacity onPress={() => openUrl(`https://maps.google.com/?q=${item.location.latitude},${item.location.longitude}`)}>
             <Text style={styles.messageText}>Location: {item.location.latitude}, {item.location.longitude}</Text>
           </TouchableOpacity>
         )}
-        {item.file && (
-          <TouchableOpacity onPress={() => openUrl(item.file)}>
-            <Text style={styles.messageText}>View File</Text>
-          </TouchableOpacity>
+
+        {item.file && item.file.includes('http') && (
+          <View style={styles.imageContainer}>
+            <Image source={{ uri: item.file }} style={styles.image} />
+          </View>
         )}
+
         <Text style={styles.timestamp}>{formattedDate}</Text>
       </View>
     );
@@ -203,11 +205,14 @@ export default function Chat(props) {
     <View style={styles.container}>
       {/* Chat Header */}
       <View style={styles.header}>
-
         <View style={styles.recipientInfo}>
           <View style={styles.imageContainer}>
             <Image source={{ uri: profile.profileImage }} style={styles.profileImage} />
-            {profile.isOnline && <View style={styles.onlineIndicator} />}
+            {profile.isOnline ? (
+              <View style={styles.onlineIndicatorGreen} />
+            ) : (
+              <View style={styles.onlineIndicatorGray} />
+            )}
           </View>
 
           <View style={styles.textInfo}>
@@ -238,9 +243,6 @@ export default function Chat(props) {
           <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
             <MaterialCommunityIcons name="send" size={27} color="#4A90E2" />
           </TouchableOpacity>
-          {/* <TouchableOpacity onPress={sendLocation} style={styles.iconButton}>
-            <MaterialCommunityIcons name="map-marker" size={27} color="#4A90E2" />
-          </TouchableOpacity> */}
           <TouchableOpacity onPress={sendFile} style={styles.iconButton}>
             <MaterialCommunityIcons name="image" size={27} color="#4A90E2" />
           </TouchableOpacity>
@@ -290,6 +292,16 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     marginTop: 5,
   },
+  seenText: {
+    color: "#28A745",  // Green color for "Seen"
+    fontSize: 12,
+    marginTop: 5,
+    alignSelf: "flex-end",
+    fontWeight: 'bold',
+    backgroundColor: '#f8f9fa', // Add a light background for better visibility
+    padding: 5, // Add some padding to make the text stand out more
+    borderRadius: 5, // Optional: rounded corners for the background
+  },
   typingIndicator: {
     textAlign: "center",
     fontStyle: "italic",
@@ -317,7 +329,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   sendButton: {
-    marginLeft:15
+    marginLeft: 15
   },
   header: {
     flexDirection: "row",
@@ -325,9 +337,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#4A90E2", // Nouveau code de couleur (bleu clair)
     paddingVertical: 8,
     paddingHorizontal: 8,
-  },
-  backButton: {
-    marginRight: 20,
   },
   recipientInfo: {
     flexDirection: "row",
@@ -342,12 +351,12 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 50,
     borderWidth: 0,
-    marginLeft:8,
-    marginRight:3,
-    marginTop:10,
+    marginLeft: 8,
+    marginRight: 3,
+    marginTop: 10,
     borderColor: "#fff",
   },
-  onlineIndicator: {
+  onlineIndicatorGreen: {
     position: "absolute",
     bottom: 2,
     right: 2,
@@ -355,6 +364,17 @@ const styles = StyleSheet.create({
     height: 11,
     borderRadius: 5,
     backgroundColor: "#28A745",
+    borderWidth: 1,
+    borderColor: "#fff",
+  },
+  onlineIndicatorGray: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 11,
+    height: 11,
+    borderRadius: 5,
+    backgroundColor: "#6C757D",
     borderWidth: 1,
     borderColor: "#fff",
   },
@@ -367,13 +387,18 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 20,
     fontWeight: "bold",
-    marginTop:10,
+    marginTop: 10,
   },
   recipientName: {
     color: "#fff",
     fontSize: 20,
     fontWeight: "bold",
     marginRight: 5,
-    marginTop:10,
+    marginTop: 10,
+  },
+  image: {
+    width: 200,   // Limit the image width to avoid overflowing
+    height: 200,  // Limit the image height to avoid large images
+    borderRadius: 10,  // Optional: Adds rounded corners to the image
   },
 });

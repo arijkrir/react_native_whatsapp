@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import firebase from "../Config/Index";
 const auth = firebase.auth();
+const database = firebase.database();
 
 export default function Auth(props) {
   let email, pwd;
@@ -53,6 +54,10 @@ export default function Auth(props) {
                 .signInWithEmailAndPassword(email, pwd)
                 .then(() => {
                   const currentid = auth.currentUser.uid;
+                  
+                  // Mettre à jour le statut de l'utilisateur à "online"
+                  database.ref(`users/${currentid}`).update({ status: "online" });
+
                   props.navigation.replace("Home", { currentid: currentid });
                 })
                 .catch((error) => {

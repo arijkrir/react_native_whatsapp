@@ -175,7 +175,7 @@ export default function MyProfile(props) {
           style={styles.cameraIcon}
           onPress={() => setModalVisible(true)}
         >
-            <Ionicons name="camera" size={28} color="#000080" />
+          <Ionicons name="camera" size={28} color="#000080" />
         </TouchableOpacity>
       </View>
 
@@ -189,8 +189,7 @@ export default function MyProfile(props) {
               style={styles.modalButton}
               onPress={() => handleImagePick(true)}
             >
-                <Ionicons name="camera" size={28} color="#000080" />
-
+              <Ionicons name="camera" size={28} color="#000080" />
               <Text style={styles.modalButtonText}>Open Camera</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -245,6 +244,10 @@ export default function MyProfile(props) {
       <TouchableHighlight
         onPress={async () => {
           try {
+            // Mettre l'utilisateur hors ligne dans la base de données
+            await database.ref(`users/${userId}`).update({ status: "offline" });
+
+            // Se déconnecter
             await firebase.auth().signOut();
             await AsyncStorage.removeItem("email");
             await AsyncStorage.removeItem("password");

@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, StatusBar, Linking, ImageBackground } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  StatusBar,
+  Linking,
+  ImageBackground,
+} from "react-native";
 import firebase from "../../Config/Index";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -42,7 +52,7 @@ export default function ListProfile(props) {
   };
 
   return (
-    <ImageBackground 
+    <ImageBackground
       source={require("../../assets/images.jpeg")} // Set the background image
       style={styles.backgroundImage} // Style the background image
     >
@@ -52,30 +62,56 @@ export default function ListProfile(props) {
         <FlatList
           data={data}
           renderItem={({ item }) => {
+            // Ajouter un point vert ou gris basé sur l'état en ligne
+            const onlineStatus = item.isOnline ? "green" : "gray";
             return (
               <View style={styles.profileContainer}>
                 <View style={styles.profileImageContainer}>
                   <Image
-                    source={item.profileImage ? { uri: item.profileImage } : require("../../assets/profile.png")}
+                    source={
+                      item.profileImage
+                        ? { uri: item.profileImage }
+                        : require("../../assets/profile.png")
+                    }
                     style={styles.profileImage}
                   />
-                  {item.isOnline && <View style={styles.onlineIndicator} />}
+                  <View
+                    style={[
+                      styles.onlineIndicator,
+                      { backgroundColor: onlineStatus },
+                    ]}
+                  />
                 </View>
                 <View style={styles.profileInfo}>
-                  <Text style={styles.profileName}>{item.nom} {item.pseudo}</Text>
+                  <Text style={styles.profileName}>
+                    {item.nom} {item.pseudo}
+                  </Text>
                 </View>
                 <View style={styles.iconsContainer}>
                   {item.telephone && (
                     <TouchableOpacity onPress={() => handleCall(item.telephone)}>
-                      <Ionicons name="call-outline" size={28} color="#07f" style={styles.icon} />
+                      <Ionicons
+                        name="call-outline"
+                        size={28}
+                        color="#07f"
+                        style={styles.icon}
+                      />
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity
                     onPress={() => {
-                      navigation.navigate("Chat", { profile: item, currentId: currentid });
+                      navigation.navigate("Chat", {
+                        profile: item,
+                        currentId: currentid,
+                      });
                     }}
                   >
-                    <Ionicons name="chatbubbles-outline" size={28} color="#07f" style={styles.icon} />
+                    <Ionicons
+                      name="chatbubbles-outline"
+                      size={28}
+                      color="#07f"
+                      style={styles.icon}
+                    />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -92,8 +128,8 @@ export default function ListProfile(props) {
 const styles = StyleSheet.create({
   backgroundImage: {
     flex: 1, // Ensures the image covers the full screen
-    resizeMode: 'cover', // Keeps the aspect ratio of the image
-    justifyContent: 'center', // Centers content vertically if needed
+    resizeMode: "cover", // Keeps the aspect ratio of the image
+    justifyContent: "center", // Centers content vertically if needed
   },
   container: {
     flex: 1,
@@ -138,9 +174,8 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: "green",
     borderWidth: 3,
-    borderColor: "#fff",
+    borderColor: "#fff", // White border for better visibility
   },
   profileInfo: {
     flex: 1,
