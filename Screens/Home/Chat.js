@@ -1,475 +1,379 @@
+import { Image } from 'react-native';
 import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   FlatList,
   TextInput,
-  StyleSheet,
   TouchableOpacity,
-  Animated,
-  Image,
-  TouchableWithoutFeedback,
-  Keyboard,
-  Button,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
 } from "react-native";
+import { app, supabase } from '../../Config/Index';
+import { getDatabase, ref, push, set, onValue, child } from 'firebase/database';
+import * as Location from 'expo-location';
 import * as ImagePicker from "expo-image-picker";
-import * as DocumentPicker from "expo-document-picker";
-import { Audio } from "expo-av";
-import * as Location from "expo-location";
-import firebase from "../../Config/Index";
-import Icon from "react-native-vector-icons/FontAwesome";
-import { KeyboardAvoidingView } from 'react-native';
-import { Platform } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons'; // Import icons
 
-
-const database = firebase.database();
-const ref_lesMessage = database.ref("Discussions");
+const database = getDatabase(app);
 
 export default function Chat(props) {
-  const { currentUser, secondUser } = props.route.params;
+  const [messages, setMessages] = useState([]);
+  const [inputText, setInputText] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [location, setLocation] = useState(null);
+  const [file, setFile] = useState(null);
 
-  const iddisc =
-    currentUser.id > secondUser.id
-      ? currentUser.id + secondUser.id
-      : secondUser.id + currentUser.id;
-
-  const ref_unedisc = ref_lesMessage.child(iddisc);
-
-  const [data, setData] = useState([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [userTyping, setUserTyping] = useState(false);
-  const [fadeAnim] = useState(new Animated.Value(0));
-  const [isOnline, setIsOnline] = useState(false);
-  const [recording, setRecording] = useState(null);
-  const [isBubbleVisible, setIsBubbleVisible] = useState(false); // State to control the visibility of the bubble
-
-  const ref_currentistyping = ref_unedisc.child(`${currentUser.id}isTyping`);
+  const profile = props.route.params.profile;
+  const currentId = props.route.params.currentId;
+  const idDiscussion = currentId > profile.id ? currentId + profile.id : profile.id + currentId;
+  const ref_uneDiscussion = ref(database, `/lesDiscussions/${idDiscussion}`);
 
   useEffect(() => {
-    const listener = ref_unedisc.on("value", (snapshot) => {
-      const d = [];
-      snapshot.forEach((message) => {
-        d.push(message.val());
+    const messagesListener = onValue(ref_uneDiscussion, (snapshot) => {
+      const fetchedMessages = [];
+      snapshot.forEach((childSnapshot) => {
+        if (childSnapshot.key !== "typing") {
+          fetchedMessages.push(childSnapshot.val());
+        }
       });
-      setData(d);
+      setMessages(fetchedMessages.reverse());
     });
 
-    return () => ref_unedisc.off("value", listener);
+    const typingListener = onValue(child(ref_uneDiscussion, "typing"), (snapshot) => {
+      if (snapshot.val() && snapshot.val() !== currentId) {
+        setIsTyping(true);
+      } else {
+        setIsTyping(false);
+      }
+    });
+
+    return () => {
+      messagesListener();
+      typingListener();
+    };
   }, []);
 
-  useEffect(() => {
-    const ref_online = database.ref(`lesprofiles/${secondUser.id}/isOnline`);
+  const handleInputChange = (text) => {
+    setInputText(text);
+    if (text) {
+      set(ref(database, `/lesDiscussions/${idDiscussion}/typing`), currentId);
+    } else {
+      set(ref(database, `/lesDiscussions/${idDiscussion}/typing`), null);
+    }
+  };
 
-    const listener = ref_online.on("value", (snapshot) => {
-      setIsOnline(snapshot.val() === true);
-    });
+  const sendMessage = async () => {
+    if (inputText.trim() === "" && !location && !file) return;
 
-    return () => ref_online.off("value", listener);
-  }, [secondUser.id]);
+    const newMessage = {
+      id: Date.now().toString(),
+      text: inputText.trim(),
+      sender: currentId,
+      date: new Date().toISOString(),
+      receiver: profile.id,
+      location: location || null,
+      file: file || null,
+    };
 
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: userTyping ? 1 : 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [userTyping]);
+    const newMessageRef = ref(database, `/lesDiscussions/${idDiscussion}`);
+    const newMessageKey = push(newMessageRef).key;
 
-  const sendMessage = (messageContent, type = "text") => {
-    if (!messageContent.trim() && type === "text") return;
-
-    const key = ref_unedisc.push().key;
-    const ref_unmessage = ref_unedisc.child(key);
-
-    ref_unmessage
-      .set({
-        body: messageContent,
-        time: new Date().toLocaleString(),
-        sender: currentUser.id,
-        receiver: secondUser.id,
-        type,
-      })
+    set(ref(database, `/lesDiscussions/${idDiscussion}/${newMessageKey}`), newMessage)
       .then(() => {
-        if (type === "text") setNewMessage("");
+        set(ref(database, `/lesDiscussions/${idDiscussion}/typing`), null);
+        setInputText("");
+        setLocation(null);
+        setFile(null);
       })
       .catch((error) => {
-        console.error("Error sending message: ", error);
+        console.error("Error sending message:", error);
+        Alert.alert("Error", "Failed to send the message.");
       });
-
-    handleBlur();
-  };
-
-  const handleFocus = () => {
-    ref_currentistyping.set(true);
-    setUserTyping(true);
-  };
-
-  const handleBlur = () => {
-    ref_currentistyping.set(false);
-    setUserTyping(false);
-  };
-
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
-    });
-
-    if (!result.canceled) {
-      sendMessage(result.assets[0].uri, "image");
-    }
-  };
-
-  const pickFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: "*/*",
-    });
-
-    if (result.type === "success") {
-      sendMessage(result.uri, "file");
-    }
-  };
-
-  const startRecording = async () => {
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== "granted") {
-        alert("Permission d'enregistrement refusée.");
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
-      );
-      setRecording(recording);
-    } catch (err) {
-      console.error("Failed to start recording", err);
-    }
-  };
-
-  const stopRecording = async () => {
-    try {
-      if (!recording) return;
-
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-
-      if (uri) {
-        sendMessage(uri, "audio");
-      }
-    } catch (err) {
-      console.error("Failed to stop recording", err);
-    }
   };
 
   const sendLocation = async () => {
     let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      alert("Permission pour accéder à la localisation refusée.");
+    if (status !== 'granted') {
+      Alert.alert("Permission denied", "Location permission is required.");
       return;
     }
 
-    let location = await Location.getCurrentPositionAsync({});
-    const locationMessage = `https://www.google.com/maps?q=${location.coords.latitude},${location.coords.longitude}`;
-    sendMessage(locationMessage, "location");
+    const userLocation = await Location.getCurrentPositionAsync({});
+    const message = {
+      id: Date.now().toString(),
+      text: "Shared Location",
+      sender: currentId,
+      date: new Date().toISOString(),
+      receiver: profile.id,
+      location: userLocation.coords,
+    };
+
+    setLocation(userLocation.coords);
+    sendMessageWithDetails(message);
   };
 
-  const toggleBubble = () => {
-    setIsBubbleVisible(!isBubbleVisible); // Toggle the visibility of the bubble
+  const sendFile = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        Alert.alert("Error", "No valid image was selected.");
+        return;
+      }
+
+      const uriLocal = result.assets[0].uri;
+      const response = await fetch(uriLocal);
+      const blob = await response.blob();
+      const arraybuffer = await new Response(blob).arrayBuffer();
+      await supabase.storage.from("ProfiliImages").upload(currentId, arraybuffer, {
+        upsert: true,
+      });
+
+      const { data } = supabase.storage.from("ProfiliImages").getPublicUrl(currentId);
+      const publicImageUrl = data.publicUrl;
+
+      const message = {
+        id: Date.now().toString(),
+        text: "Shared Image",
+        sender: currentId,
+        date: new Date().toISOString(),
+        receiver: profile.id,
+        file: publicImageUrl,
+      };
+
+      sendMessageWithDetails(message);
+      setFile(publicImageUrl);
+    } catch (error) {
+      Alert.alert("Error", "Failed to send the file.");
+    }
+  };
+
+  const sendMessageWithDetails = (message) => {
+    const newMessageRef = ref(database, `/lesDiscussions/${idDiscussion}`);
+    const newMessageKey = push(newMessageRef).key;
+
+    set(ref(database, `/lesDiscussions/${idDiscussion}/${newMessageKey}`), message)
+      .then(() => {
+        set(ref(database, `/lesDiscussions/${idDiscussion}/typing`), null);
+        setInputText("");
+        setLocation(null);
+        setFile(null);
+      })
+      .catch((error) => {
+        Alert.alert("Error", "Failed to send the message.");
+      });
+  };
+
+  const openUrl = (url) => {
+    Linking.openURL(url).catch((err) => console.error("Failed to open URL", err));
+  };
+
+  const renderMessage = ({ item }) => {
+    const isMe = item.sender === currentId;
+    const formattedDate = new Date(item.date).toLocaleTimeString();
+
+    return (
+      <View style={[styles.messageContainer, isMe ? styles.myMessage : styles.otherMessage]}>
+        <Text style={styles.messageText}>{item.text}</Text>
+        {item.location && (
+          <TouchableOpacity onPress={() => openUrl(`https://maps.google.com/?q=${item.location.latitude},${item.location.longitude}`)}>
+            <Text style={styles.messageText}>Location: {item.location.latitude}, {item.location.longitude}</Text>
+          </TouchableOpacity>
+        )}
+        {item.file && (
+          <TouchableOpacity onPress={() => openUrl(item.file)}>
+            <Text style={styles.messageText}>View File</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={styles.timestamp}>{formattedDate}</Text>
+      </View>
+    );
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={0}
-    >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <View style={styles.headerInfo}>
-              <View style={styles.profilePictureContainer}>
-                {secondUser.urlImage ? (
-                  <Image
-                    source={{ uri: secondUser.urlImage }}
-                    style={styles.profilePicture}
-                  />
-                ) : (
-                  <View style={styles.profilePicture}>
-                    <Text style={styles.profileText}>
-                      {secondUser.nom ? secondUser.nom[0] : ""}
-                    </Text>
-                  </View>
-                )}
-                {isOnline && <View style={styles.onlineIndicator} />}
-              </View>
-              <View>
-                <Text style={styles.headerText}>
-                  {secondUser.nom} {secondUser.pseudo}
-                </Text>
-                <Text style={styles.statusText}>
-                  {isOnline ? "En ligne" : "Hors ligne"}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.callIcons}>
-              <TouchableOpacity onPress={() => alert("Appel vocal...")}>
-                <Icon name="phone" style={styles.callIcon} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => alert("Appel vidéo...")}>
-                <Icon name="video-camera" style={styles.callIcon} />
-              </TouchableOpacity>
-            </View>
+    <View style={styles.container}>
+      {/* Chat Header */}
+      <View style={styles.header}>
+
+        <View style={styles.recipientInfo}>
+          <View style={styles.imageContainer}>
+            <Image source={{ uri: profile.profileImage }} style={styles.profileImage} />
+            {profile.isOnline && <View style={styles.onlineIndicator} />}
           </View>
 
-          <FlatList
-            data={data}
-            renderItem={({ item }) => (
-              <View
-                style={[
-                  styles.messageContainer,
-                  item.sender === currentUser.id
-                    ? styles.messageSent
-                    : styles.messageReceived,
-                ]}
-              >
-                {item.type === "text" && <Text style={styles.messageText}>{item.body}</Text>}
-                {item.type === "image" && (
-                  <Image
-                    source={{ uri: item.body }}
-                    style={styles.messageImage}
-                    resizeMode="contain"
-                  />
-                )}
-                {item.type === "file" && (
-                  <Text style={styles.messageFile}>Fichier : {item.body}</Text>
-                )}
-                {item.type === "audio" && (
-                  <Text style={styles.messageAudio}>Message audio envoyé</Text>
-                )}
-                {item.type === "location" && (
-                  <TouchableOpacity
-                    onPress={() => Linking.openURL(item.body)}
-                    style={styles.messageLocation}
-                  >
-                    <Text style={styles.messageLocationText}>Voir la localisation</Text>
-                  </TouchableOpacity>
-                )}
-                <Text style={styles.messageTime}>{item.time}</Text>
-              </View>
-            )}
-            keyExtractor={(item, index) => index.toString()}
-            contentContainerStyle={styles.messagesContainer}
-          />
-
-          <View style={styles.typingIndicator}>
-            {userTyping && (
-              <Animated.Text style={[styles.typingText, { opacity: fadeAnim }]}>
-                {secondUser.nom} est en train d’écrire...
-              </Animated.Text>
-            )}
-          </View>
-
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Écrire un message..."
-              value={newMessage}
-              onChangeText={setNewMessage}
-              multiline
-              numberOfLines={4}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-            />
-            <Button onPress={() => sendMessage(newMessage)} title="Envoyer" />
-
-            {/* Bubble button */}
-            <TouchableOpacity onPress={toggleBubble}>
-              <Icon name="plus" style={styles.icon} />
-            </TouchableOpacity>
-
-            {/* Bubble with icons */}
-            {isBubbleVisible && (
-              <View style={styles.bubbleContainer}>
-                <TouchableOpacity onPress={pickImage}>
-                  <Icon name="image" style={styles.bubbleIcon} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={pickFile}>
-                  <Icon name="paperclip" style={styles.bubbleIcon} />
-                </TouchableOpacity>
-                <TouchableOpacity onPressIn={startRecording} onPressOut={stopRecording}>
-                  <Icon name="microphone" style={styles.bubbleIcon} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={sendLocation}>
-                  <Icon name="location-arrow" style={styles.bubbleIcon} />
-                </TouchableOpacity>
-              </View>
-            )}
+          <View style={styles.textInfo}>
+            <Text style={styles.recipientName}>{profile.nom}</Text>
+            <Text style={styles.recipientPseudo}>{profile.pseudo}</Text>
           </View>
         </View>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+      </View>
+
+      {/* Main Chat Body */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flexGrow}>
+        <FlatList
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messagesList}
+          inverted
+        />
+        {isTyping && <Text style={styles.typingIndicator}>Typing...</Text>}
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.textInput}
+            placeholder="Type a message..."
+            value={inputText}
+            onChangeText={handleInputChange}
+          />
+          <TouchableOpacity style={styles.sendButton} onPress={sendMessage}>
+            <MaterialCommunityIcons name="send" size={27} color="#4A90E2" />
+          </TouchableOpacity>
+          {/* <TouchableOpacity onPress={sendLocation} style={styles.iconButton}>
+            <MaterialCommunityIcons name="map-marker" size={27} color="#4A90E2" />
+          </TouchableOpacity> */}
+          <TouchableOpacity onPress={sendFile} style={styles.iconButton}>
+            <MaterialCommunityIcons name="image" size={27} color="#4A90E2" />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#F8F9FA",  // Soft background for better contrast
   },
-  header: {
-    padding: 10,
-    backgroundColor: "#007BFF",
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    justifyContent: "space-between",
+  flexGrow: {
+    flex: 1,
   },
-  headerInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  profilePictureContainer: {
-    position: "relative",
-  },
-  profilePicture: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 15,
-    marginTop: 10,
-  },
-  profileText: {
-    fontSize: 18,
-    color: "#007BFF",
-    fontWeight: "bold",
-  },
-  onlineIndicator: {
-    position: "absolute",
-    bottom: 5,
-    right: 5,
-    width: 15,
-    height: 15,
-    borderRadius: 7.5,
-    backgroundColor: "green",
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  headerText: {
-    fontSize: 20,
-    color: "#fff",
-    fontWeight: "bold",
-    marginTop: 10,
-  },
-  statusText: {
-    fontSize: 12,
-    color: "#fff",
-  },
-  callIcons: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 15,
-    marginTop: 10,
-  },
-  callIcon: {
-    fontSize: 25,
-    color: "#fff",
-    marginLeft: 25,
-  },
-  messagesContainer: {
-    paddingVertical: 10,
+  messagesList: {
+    paddingHorizontal: 10,
+    paddingVertical: 15,
   },
   messageContainer: {
-    padding: 10,
-    marginVertical: 5,
-    borderRadius: 10,
     maxWidth: "75%",
-    alignSelf: "flex-start",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#ccc",
+    borderRadius: 20,
+    padding: 12,
+    marginVertical: 7,
+    shadowColor: "#000",  // Add a subtle shadow effect for message bubbles
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
-  messageSent: {
-    backgroundColor: "#DCF8C6",
+  myMessage: {
     alignSelf: "flex-end",
+    backgroundColor: "#4A90E2",
   },
-  messageReceived: {
-    backgroundColor: "#fff",
+  otherMessage: {
+    alignSelf: "flex-start",
+    backgroundColor: "#6C757D",
   },
   messageText: {
+    color: "#fff",
     fontSize: 16,
-    color: "#333",
   },
-  messageTime: {
-    fontSize: 12,
-    color: "#666",
-    textAlign: "right",
+  timestamp: {
+    fontSize: 10,
+    color: "#EDEDED",
+    alignSelf: "flex-end",
     marginTop: 5,
   },
   typingIndicator: {
-    marginVertical: 5,
-    alignItems: "center",
-  },
-  typingText: {
-    fontSize: 14,
+    textAlign: "center",
     fontStyle: "italic",
-    color: "#666",
+    color: "#6C757D",
+    marginBottom: 10,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     padding: 10,
-    backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderColor: "#ccc",
+    borderTopColor: "#ddd",
+    backgroundColor: "#fff",
   },
-  input: {
+  textInput: {
     flex: 1,
+    height: 40,
+    borderColor: "#ddd",
     borderWidth: 1,
-    borderColor: "#ccc",
     borderRadius: 20,
-    padding: 10,
-    marginRight: 10,
-    backgroundColor: "#f9f9f9",
-    maxHeight: 100,
+    paddingHorizontal: 10,
+    backgroundColor: "#F1F3F5",
   },
-  icon: {
-    fontSize: 24,
-    color: "#007BFF",
+  iconButton: {
     marginLeft: 10,
   },
-  bubbleContainer: {
-    position: "absolute",
-    bottom: 55,
-    right:0,
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    padding: 10,
+  sendButton: {
+    marginLeft:15
+  },
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
-    width: 200,
-    zIndex: 1,
+    backgroundColor: "#4A90E2", // Nouveau code de couleur (bleu clair)
+    paddingVertical: 8,
+    paddingHorizontal: 8,
   },
-  bubbleIcon: {
+  backButton: {
+    marginRight: 20,
+  },
+  recipientInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  imageContainer: {
+    position: "relative",
+  },
+  profileImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 50,
+    borderWidth: 0,
+    marginLeft:8,
+    marginRight:3,
+    marginTop:10,
+    borderColor: "#fff",
+  },
+  onlineIndicator: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 11,
+    height: 11,
+    borderRadius: 5,
+    backgroundColor: "#28A745",
+    borderWidth: 1,
+    borderColor: "#fff",
+  },
+  textInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  recipientPseudo: {
+    color: "#fff",
     fontSize: 20,
-    color: "#007BFF",
-    marginHorizontal: 10,
+    fontWeight: "bold",
+    marginTop:10,
+  },
+  recipientName: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "bold",
+    marginRight: 5,
+    marginTop:10,
   },
 });

@@ -54,17 +54,17 @@ export default function NewUser(props) {
 
         {/* Submit and Back Buttons */}
         <View style={styles.buttonContainer}>
-          <TouchableOpacity
+        <TouchableOpacity
             style={[styles.button, styles.registerButton]}
             onPress={() => {
               auth
                 .createUserWithEmailAndPassword(email, pwd)
                 .then(() => {
-                  const currentid=auth.currentUser.uid;
-                  props.navigation.replace("Home",{currentid:currentid});
+                  const currentid = auth.currentUser.uid;
+                  props.navigation.replace("MyProfile", { currentid });
                 })
                 .catch((error) => {
-                  alert(error);
+                  alert(error.message);
                 });
             }}
           >

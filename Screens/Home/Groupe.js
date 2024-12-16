@@ -260,6 +260,7 @@ const styles = StyleSheet.create({
     padding: 15,
     backgroundColor: "#007BFF",
     borderRadius: 15,
+    marginTop:20,
     marginBottom: 10,
   },
   title: {
@@ -289,7 +290,7 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: "center",
     marginTop: 20,
-    color: "#FFF",
+    color: "#003366",
     fontSize: 16,
   },
   modalContainer: {
